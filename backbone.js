@@ -1637,8 +1637,9 @@
             methods = config[1],
             attribute = config[2];
 
+        // 这个方法是干嘛用的?
         Base.mixin = function(obj) {
-            var mappings = _.reduce(_.function(obj), function(memo, name) {
+            var mappings = _.reduce(_.functions(obj), function(memo, name) {
                 memo[name] = 0;
                 return memo;
             }, {});
@@ -1736,6 +1737,7 @@
         return Backbone.$.ajax.apply(Backbone.$, arguments);
     };
 
+    // 路由模块
     var Router = Backbone.Router = function(options) {
         options || (options = {});
         this.preinitialize.apply(this, arguments);
@@ -1748,15 +1750,22 @@
         this.initialize.apply(this, arguments);
     };
 
+    // .匹配除了'\n \r'之外的任意字符
+    // 匹配在双括号以及之间的字符 '(aa)'
     var optionalParam = /\((.*?)\)/g;
-    var namedParam = /(\(\?)?:\w+)/g;
+    // 匹配'(?:aa' 或者':aaa'
+    var namedParam = /(\(\?)?:\w+/g;
+    // 匹配以*开头的字符串'*ss'
     var splatParam = /\*\w+/g;
+    // 需要转义的字符'-{}[]+?.,\^$|#'以及空白
     var escapeRegExp = /[\-{}\[\]+?.,\\\^$|#\s]/g;
 
     _.extend(Router.prototype, Events, {
         preinitialize: function() {},
         initialize: function() {},
         route: function(route, name, callback) {
+            // 如果route不是一个正则表达式
+            // 则调用_routeToRegExp函数初始化
             if (!_.isRegExp(route)) {
                 route = this._routeToRegExp(route);
             }
@@ -1799,10 +1808,12 @@
             this.routes = _.result(this, 'routes');
             var route, routes = _.keys(this.routes);
 
+            // 以栈的方式便利routes 对每个元素执行route方法
             while ((route = routes.pop()) != null) {
                 this.route(route, this.routes[route]);
             }
         },
+        // 返回一个正则表达式
         _routeToRegExp: function(route) {
             route = route.replace(escapeRegExp, '\\$&')
                          .replace(optionalParam, '(?:$1)?')
@@ -1816,6 +1827,7 @@
         _extractParameters: function(route, fragment) {
             var params = route.exec(fragment).slice(1);
 
+            // 对parmas中的元素解码
             return _.map(params, function(param, i) {
                 if (i === params.length) {
                     return param || null;
@@ -1826,6 +1838,7 @@
         }
     });
 
+    // History模块
     var History = Backbone.History = function() {
         this.handlers = [];
         this.checkUrl = _.bind(this.checkUrl, this);
@@ -1836,36 +1849,45 @@
         }
     }
 
+    // 匹配#/任意一个开头或者空格结尾的字符串
     var routeStripper = /^[#\/]|\s+$/g
 
+    // 匹配以/开头或者以/结尾的字符串
     var rootStripper = /^\/+|\/+$/g;
 
+    // 匹配包含#后面跟任意个字符的字符串
     var pathStripper = /#.*$/;
 
     History.started = false;
 
     _.extend(History.prototype, Events, {
+        // 每隔50毫秒检查一次hash是否有变化
         interval: 50,
         atRoot: function() {
             var path = this.location.pathname.replace(/[^\/]/, '$&');
             return path === this.root && !this.getSearch();
         },
         matchRoot: function() {
+            // 对%字符解码
             var path = this.decodeFragment(this.location.pathname);
             var rootPath = path.slice(0, this.root.length - 1) + '/';
             return rootPath === this.root;
         },
+        // 解码
         decodeFragment: function(fragment) {
             return decodeURI(fragment.replace(/%25/g, '%2525'));
         },
+        //获取查询字符串
         getSearch: function() {
             var match = this.location.href.replace(/#.*/, '').match(/\?.+/);
             return match ? match[0] : '';
         },
+        // 获取hash值 不用location.hash获取是因为在Firefox浏览器下location.hash经常被解码
         getHash: function(window) {
             var match = (window || this).location.href.match(/#(.*)$/);
             return match ? match[1] : '';
         },
+        // 获取查询路径?
         getPath: function() {
             var path = this.decodeFragment(
                 this.location.pathname + this.getSearch()
@@ -1873,6 +1895,7 @@
             
             return path.charAt(0) === '/' ? path.slice(1) : path;
         },
+        // 
         getFragment: function(fragment) {
             if (fragment == null) {
                 if (this._usePushState || !this._wantsHashChange) {
@@ -1904,6 +1927,7 @@
             this.root = ('/' + this.root + '/').replace(rootStripper, '/');
 
             if (this._wantsHashChange && this._wanstPushState) {
+                // 在不支持pushState的浏览器中 将会重定向到一个新的url
                 if (!this._hasPushState && !this.atRoot()) {
                     var rootPath = this.root.slice(0, -1) || '/';
                     this.location.replace(rootPath + '#' + this.getPath());
@@ -1913,6 +1937,7 @@
                 }
             }
 
+            // 在不支持hashChange的浏览器下 将会使用iframe实现
             if (!this._hasHashChange && this._wantsHashChange && !this._usePushState) {
                 this.iframe = document.createElement('iframe');
                 this.iframe.src = 'javascript:0';
@@ -1926,14 +1951,18 @@
                 iWindow.location.hash = '#' + this.fragment;
             }
 
+            // 用于添加监听事件函数
             var addEventListener = window.addEventListener || function(eventName, listener) {
                 return attachEvent('on' + eventName, listener);
             };
 
+            // 在支持pushState的浏览器下 将会监听popstate事件
             if (this._usePushState) {
                 addEventListener('popstate', this.checkUrl, false);
+            // 在支持hashChange的浏览器下 将会监听hashchange事件
             } else if (this._useHashChange && !this.iframe) {
                 addEventListener('hashchange', this.checkUrl, false);
+            // 否则就用定时器定时执行回调函数
             } else if (this._wantsHashChange) {
                 this._checkUrlInterval = setInterval(this.checkUrl, this.interval);
             }
@@ -1943,21 +1972,25 @@
             }
         },
         stop: function() {
+            // 移除监听事件函数
             var removeEventListener = window.removeEventListener || function(eventName, listener) {
                 return detachEvent('on' + eventName, listener);
             };
 
+            // 移除相应的监听函数
             if (this._usePushState) {
                 removeEventListener('popstate', this.checkUrl, false);
             } else if (this._useHashChange && !this.iframe) {
                 removeEventListener('hashchange', this.checkUrl, false);
             }
 
+            // 移除iframe
             if (this.iframe) {
                 document.body.removeChild(this.iframe);
                 this.iframe = null;
             }
 
+            // 移除定时器
             if (this._checkUrlInterval) {
                 clearInterval(this._checkUrlInterval);
             }
@@ -1974,6 +2007,7 @@
                 current = this.getHash(this.iframe.contentWindow);
             }
 
+            // 如果hash没有变化则返回false
             if (current === this.fragment) {
                 return false;
             }
@@ -1991,6 +2025,7 @@
 
             fragment = this.fragment = this.getFragment(fragment);
             
+            // 执行相应的事件
             return _.some(this.handlers, function(handler) {
                 if (handler.route.test(fragment)) {
                     handler.callback(fragment);
