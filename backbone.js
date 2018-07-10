@@ -2077,6 +2077,7 @@
                     this._updateHash(iWindow.location, fragment, options.replace);
                 }
             } else {
+                // 跳转到指定的url 会有历史纪录
                 return this.location.assign(url);
             }
 
@@ -2087,6 +2088,7 @@
         _updateHash: function(location, fragment, replace) {
             if (replace) {
                 var href = location.href.replace(/(javascript:|#)/, '');
+                // 跳转到指定的url 不会有历史纪录
                 location.replace(href + '#' + fragment);
             } else {
                 location.hash = '#' + fragment;
@@ -2100,6 +2102,7 @@
         var parent = this;
         var child;
 
+        // 实例的constructor的指向它的构造函数
         if (protoProps && _.has(protoProps, 'constructor')) {
             child = protoProps.constructor;
         } else {
@@ -2110,7 +2113,9 @@
 
         _.extend(child, parent, staticProps);
 
+        // 原型继承 child.prototype指向parent的一个实例
         child.prototype = _.create(parent.prototype, protoProps);
+        // 使constructor指向自身
         child.prototype.constructor = child;
         child.__super__ = parent.prototype;
         
@@ -2131,6 +2136,7 @@
                 error.call(options.context, model, resp, options);
             }
 
+            // 触发一个error事件
             model.trigger('error', model, resp, options);
         };
     };
