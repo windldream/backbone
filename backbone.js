@@ -7,11 +7,12 @@
 
 (function(factory) {
 
-    // root代表全局对象
+    // 在浏览器环境下self和window等价
+    // 在nodeJS中global作为一个全局对象
     var root = (typeof self == 'object' && self.self === self && self) || 
                 (typeof global == 'object' && global.global === global && global);
     
-    // AMD规范加载Backbone
+    // AMD规范加载Backbone, requireJS
     if (typeof define === 'function' && define.amd) {
         define(['underscore', 'jquery', 'exports'], function(_, $, exports) {
             root.Backbone = factory(root, exports, _, $);
@@ -34,13 +35,17 @@
 })(function(root, Backbone, _, $) {
 
     // 用作Backbone的冲突处理
+    // 实际上previousBackbone的值为undefined
     var previousBackbone = root.Backbone;
     var slice = Array.prototype.slice;
 
+    // Backbone的版本号
     Backbone.VERSION = '1.3.3';
+    // jQuery Zepto ender之一的引用
     Backbone.$ = $;
 
-    // 可以用别名保存保存Backbone
+    // 可以用别名保存代替Backbone
+    // var backbone = Backbone.noConflict();
     Backbone.noConflict = function() {
         root.Backbone = previousBackbone;
         return this;
@@ -58,7 +63,8 @@
     var eventsApi = function(iteratee, events, name, callback, opts) {
         var i = 0, names;
 
-        // 将不同回调函数绑定到不同事件上
+        // 将不同的回调函数绑定到不同事件上
+        // name -> {'onchange': onchange_callback, 'onreset': onreset_callback}
         if (name && typeof name === 'object') {
             if (callback !== void 0 && 'context' in opts && opts.context === void 0) {
                 opts.context = callback;
@@ -68,10 +74,12 @@
                 events = eventsApi(iteratee, events, names[i], name[names[i]], opts);
             }
         // 将同一个回调函数绑定到不同事件上
+        // name -> 'onchange onreset'
         } else if (name && eventSplitter.test(name)) {
             for (names = name.split(eventSplitter); i < names.length; i++) {
                 events = iteratee(events, names[i], callback, opts);
             }
+        // name -> 'onchange'
         } else {
             events = iteratee(events, name, callback, opts);
         }
@@ -79,7 +87,9 @@
         return events;
     };
 
-    // 监听事件
+    // 用于订阅事件
+    // name表示事件名
+    // callback触发事件时执行的回调函数
     Events.on = function(name, callback, context) {
         this._events = eventsApi(onApi, this._events || {}, name, callback, {
             context: context,
@@ -89,7 +99,9 @@
 
         // 这里的_listening呼应listenTo里面的tryCatchOn函数
         if (_listening) {
+            // this._listeners表示监听的所有对象的集合
             var listeners = this._listeners || (this._listeners = {});
+            // 使用监听对象的id去映射监听对象
             listeners[_listening.id] = _listening;
             _listening.interop = false;
         }
@@ -104,8 +116,12 @@
         }
 
         // 生成一个全局唯一的id
+        // id保存者被监听对象的_listenId
         var id = obj._listenId || (obj._listenId = _.uniqueId('l'));
+        // listeningTo表示所有监听对象的集合
+        // 每监听一个对象都会在listeningTo生成一个映射
         var listeningTo = this._listeningTo || (this._listeningTo = {});
+        // listening表示当前正在监听的对象
         var listening = _listening = listeningTo[id];
 
         if (!listening) {
@@ -114,19 +130,21 @@
             listening = _listening = listeningTo[id] = new Listening(this, obj);
         }
 
-        // 尝试让obj去监听name事件 如果发生错误 则返回错误
+        // 尝试让监听对象obj去订阅name事件
+        // tryCatchOn只有发生错误时才会有返回值
         var error = tryCatchOn(obj, name, callback, this);
 
-        // 如果执行下面这语句, 那么_listening = new Listening(this, obj);意义在哪
-        // 执行这条语句前 _listening.interop和listening.interop具有相同的引用
+       // 解除_listening的引用
         _listening = void 0;
 
+        // 抛出错误
         if (error) {
             throw error;
         }
 
-        // 让listening去监听name事件
         // 如果tryCatchOn成功执行 则_listening.interop = false;
+        // 如果obj订阅name事件失败
+        // 那么让listening去订阅name事件
         if (listening.interop) {
             listening.on(name, callback);
         }
@@ -141,11 +159,12 @@
             var handlers = events[name] || (events[name] = []);
             var context = options.context, ctx = options.ctx, listening = options.listening;
 
+            // 监听对象的数量
             if (listening) {
                 listening.count++;
             }
 
-            // handlers数组保持着各种不同的回调函数 每个回调函数都具有各自的上下文
+            // handlers数组保存着不同的回调函数 每个回调函数都具有各自的上下文
             handlers.push({
                 callback: callback,
                 context: context,
@@ -157,6 +176,8 @@
         return events;
     };
 
+    // 用于监听对象去订阅事件                                                         
+    // 订阅失败会有一个错误的返回值
     var tryCatchOn = function(obj, name, callback, context) {
         try {
             obj.on(name, callback, context);
@@ -165,7 +186,7 @@
         }
     };
 
-    // 移除之前绑定的回掉函数
+    // 取消订阅
     Events.off = function(name, callback, context) {
         if (!this._events) {
             return this;
@@ -188,7 +209,7 @@
 
         var ids = obj ? [obj._listenId] : _.keys(listeningTo);
 
-        // 移除监听obj的函数 或者移除所有的监听函数
+        // 监听对象取消订阅
         for (var i = 0; i < ids.length; i++) {
             var listening = listeningTo[ids[i]];
 
@@ -196,7 +217,7 @@
                 break;
             }
 
-            // 移除监听obj的函数
+            // 监听对象取消订阅name事件
             listening.obj.off(name, callback, this);
 
             if (listening.interop) {
@@ -204,7 +225,8 @@
             }
         }
 
-        // 如果不再有监听其他对象事件的函数 则把this._listeningTo置为undefined
+        // 如果不存在监听对象
+        // 则把this._listeningTo置为undefined
         if (_.isEmpty(listeningTo)) {
             this._listeningTo = void 0;
         }
@@ -217,34 +239,38 @@
             return;
         }
 
-        var context = options.context, listeners = options.listeners; //listeners 监听其他对象事件的集合
+        // listeners所有监听对象事件的集合
+        var context = options.context, listeners = options.listeners; 
         var i = 0, names;
 
-        // 当不存在事件名和上下文和回调函数时 清除掉所有监听其他对象上的的监听事件
+        // 当不存在事件名和上下文和回调函数时 
+        // 取消所有监听对象的订阅
         if (!name && !context && !callback) {
             for (names = _.keys(listeners); i < names.length; i++) {
                 listeners[names[i]].cleanup();
             }
         }
 
-        names = name ? [name] : _.keys(events); // 所有类型的事件和相应的回掉函数
+        // 订阅事件名的集合
+        names = name ? [name] : _.keys(events); 
 
         for (; i < names.length; i++) {
             name = names[i];
             var handlers = events[name];
 
-            // 如果handers为空说明没有监听函数
+            // 如果handers不存在说明回调函数
             if (!handlers) {
                 break;
             }
 
-            // remaining保存着不该注销的监听函数
+            // remaining保存着订阅该事件的监听对象 的相应回调函数
             var remaining = [];
 
             for (var j = 0; j < handlers.length; j++) {
                 var handler = handlers[i];
 
-                // 如果上下文或者监听函数和实参不一样说明改函数不应该移除
+                // 如果上下文或者回调函数和传入的实参不一致
+                // 说明监听对象不会取消订阅事件
                 if (callback && callback !== handler.callback &&
                         callback !== handler.callback._callback ||
                             context && context !== handler.context
@@ -253,16 +279,17 @@
                 } else {
                     var listening = handler.listening;
 
+                    // 取消订阅
                     if (listening) {
                         listening.off(name, callback);
                     }
                 }
             }
 
-            // 如果remaining不为空说明改事件不应该被注销
+            // 如果remaining不为空说明该事件还有监听对象在订阅
+            // 否则注销该事件
             if (remaining.length) {
                 events[name] = remaining;
-            // 注销name事件
             } else {
                 delete events[name];
             }
@@ -271,15 +298,20 @@
         return events;
     };
 
-    // 绑定的回调函数触发一次将被移除
+    // 只订阅一次事件 绑定的回调函数触发一次将被移除
     Events.once = function(name, callback, context) {
-        var events = eventsApi(onceMap, {}, name, callback, _.bind(this.off, this));
-        return this.listenTo(obj, events);
+        var events = eventsApi(onceMap, {}, name, callback, this.off.bind(this));
+        
+        if (typeof name === 'string' && context == null) {
+            callback = void 0;
+        }
+
+        return this.on(events, callback, context);
     };
 
-    // 只监听一次事件 之后callback将被移除
+    // 监听对象只订阅一次事件 之后回调函数将被移除
     Events.listenToOnce = function(obj, name, callback) {
-        var events = eventsApi(onceMap, {}, name, callback, _.bind(this.stopListening, this, obj));
+        var events = eventsApi(onceMap, {}, name, callback, this.stopListening.bind(this, obj));
         return this.listenTo(obj, events);
     };
 
@@ -287,7 +319,9 @@
         if (callback) {
             // _.once函数创建一个只执行一次函数
             var once = map[name] = _.once(function() {
+                // 取消订阅
                 offer(name, once);
+                // 执行回调函数
                 callback.apply(this, arguments);
             });
 
@@ -297,14 +331,14 @@
         return map;
     };
 
-    // 触发name事件 
+    // 触发事件 
     Events.trigger = function(name) {
         if (!this._events) {
             return this;
         }
 
         var length = Math.max(0, arguments - 1);
-        // 把除去第一个参数以外的所有参数保存到args中
+        // args中保存着第一个参数以外的所有参数
         var args = Array(length);
 
         for (var i = 0; i < length; i++) {
@@ -315,8 +349,10 @@
         return this;
     };
 
+    // 触发事件
     var triggerApi = function(objEvents, name, callback, args) {
         if (objEvents) {
+            // events订阅name事件回调函数的集合
             var events = objEvents[name];
             var allEvents = objEvents.all;
 
@@ -339,6 +375,7 @@
     var triggerEvents = function(events, args) {
         var ev, i = -1, l = events.length, a1 = args[0], a2 = args[1], a3 = args[2];
 
+        // 执行订阅该事件的回调函数
         switch (args.length) {
             case 0:
                 while (++i < l) {
@@ -368,8 +405,8 @@
         }
     };
 
-    // 一个创建监听其他对象的构造函数
-    // obj表示正在被监听的对象
+    // 监听对象的构造函数
+    // obj表示监听的对象
     var Listening = function(listener, obj) {
         this.id = listener._listenId;
         this.listener = listener;
@@ -381,6 +418,7 @@
 
     Listening.prototype.on = Events.on;
 
+    // 监听对象取消订阅name事件
     Listening.prototype.off = function(name, callback) {
         var cleanup;
 
@@ -390,6 +428,7 @@
                 listeners: void 0
             });
 
+            // this._events在何种情况下为false
             cleanup = !this._events;
         } else {
             this.count--;
@@ -401,6 +440,7 @@
         }
     };
 
+    // 从监听对象的映射表中删除该监听对象
     Listening.prototype.cleanup = function() {
         delete this.listener._listeningTo[this.obj._listenId];
 
@@ -415,10 +455,12 @@
     _.extend(Backbone, Events);
 
     // Backbone.model
+    // 构造函数(用于创建一个模型)
     var Model = Backbone.model = function(attributes, options) {
         var attrs = attributes || {};
         options || (options = {});
         this.preinitialize(this, arguments);
+        // 为模型生成一个唯一id
         this.cid = _.uniqueId(this.cidPrefix);
         this.attributes = {};
 
@@ -430,14 +472,17 @@
             attrs = this.parse(attrs, options) || {};
         }
 
+        // 获取实例的defaults属性
         var defaults = _.result(this, 'defaults');
         attrs = _.defaults(_.extend({}, defaults, attrs), defaults);
+        // 初始化模型中的属性
         this.set(attrs, options);
         // 存储历史变化记录
         this.changed = {};
         this.initialize.apply(this, arguments);
     };
 
+    // 在Model.prototype上添加属性和方法 同时继承Events
     _.extend(Model.prototype, Events, {
         changed: null,
         validationError: null,
@@ -456,7 +501,7 @@
         get: function(attr) {
             return this.attributes[attr];
         },
-        // 获取attr转义过的属性
+        // 转义attr对应的属性值
         escape: function(attr) {
             return _.escape(this.get(attr));
         },
@@ -464,10 +509,11 @@
         has: function(attr) {
             return this.get(attr) != null;
         },
-        // 判断attr中的属性是否匹配this.attributes
+        // 判断attrs中的属性是否匹配this.attributes
         matches: function(attrs) {
             return !!_.iteratee(attrs, this)(this.attributes);
         },
+        // 设置key, val
         set: function(key, val, options) {
             if (key == null) {
                 return this;
@@ -479,27 +525,31 @@
             if (typeof key === 'object') {
                 attrs = key;
                 options = val;
+            // 初始化attrs 并设置key, val
             } else {
                 (attrs = {})[key] = val;
             }
 
             options || (options = {});
 
-            // 验证参数是否合法
+            // 校验参数是否合法
             if (!this._validate(attrs, options)) {
                 return false;
             }
 
+            // 删除还是更新属性
             var unset = options.unset;
             // slient表示是否静默改变
             var silent = options.silent;
+            // 用于存储改变属性的key值
             var changes = [];
-            // 和上一次对比是否改变过
+            // 模型之前是否改变过
             var changing = this._changing;
             this._changing = true;
 
             // 之前不曾改变过
             if (!changing) {
+                // 复制模型的attributes属性 保存改变前的数据
                 this._previousAttributes = _.clone(this.attributes);
                 this.changed = {};
             }
@@ -511,35 +561,38 @@
             for (var attr in attrs) {
                 val = attrs[attr];
 
-                // 如果当前的值和要设置的值不一样 则在changes数组中添加
+                // 如果当前的值和要设置的值不一样 则在changes数组中添加改变属性的key
+                // changes保存着这次更新改变的属性
                 if (!_.isEqual(current[attr], val)) {
                     changes.push(attr);
                 }
 
                 // 如果要设置的值和上一次的值不一样 则记录key和val
-                // 这里不是很明白
+                // changed保存着和原始模型attributes相比改变过的映射表
                 if (!_.isEqual(prev[attr], val)) {
                     changed[attr] = val;
                 } else {
                     delete changed[attr];
                 }
 
-                // unset为true时会从内部属性种删除指定属性
-                // unset为false时可以实时更新指定属性
+                // unset为true时 会把属性从模型中删除
+                // unset为false时 会更新模型中的属性
                 unset ? delete current[attr] : current[attr] = val;
             }
 
-            // 获取id
+            // 更新id
             if (this.idAttribute in attrs) {
                 this.id = this.get(this.idAttribute);
             }
 
-            // silent参数表示是否静默触发change事件
+            // silent参数表示是否静默改变
+            // 为false时 会触发模型的change事件
             if (!silent) {
                 if (changes.length) {
                     this._pending = options;
                 }
 
+                // 触发对应的change事件
                 for (var i = 0; i < changes.length; i++) {
                     this.trigger('change:' + changes[i], this, current[changes[i]], options);
                 }
@@ -551,6 +604,7 @@
             }
 
             // 这里为什么还要触发一次change事件
+            // 使用循环是因为有可能发生嵌套改变
             if (!silent) {
                 while (this._pending) {
                     options = this._pending;
@@ -564,11 +618,11 @@
             this._changing = false;
             return this;
         },
-        // 删除指定的内部属性
+        // 从模型中删除属性 内部调用set方法
         unset: function(attr, options) {
             return this.set(attr, void 0, _.extend({}, options, {unset: true}));
         },
-        // 把所有的内部属性都置为undefined
+        // 把模型中的属性对应的属性值都重置为undefined
         clear: function(options) {
             var attrs = {};
 
@@ -578,7 +632,7 @@
 
             return this.set(attrs, _.extend({}, options, {unset: true}));
         },
-        // 不传参数时 判断this.changed的数组是否为空
+        // 不传参数时 确定模型是否改变过自上一次change事件之后
         // 否则判断attr属性是否改变过
         hasChanged: function(attr) {
             if (attr == null) {
@@ -616,7 +670,7 @@
             // 如果有改变过则返回changed
             return hasChanged ? changed : false;
         },
-        // 返回上一次的attribues的指定属性
+        // 返回已改变属性的旧值
         previous: function(attr) {
             if (attr == null || !this._previousAttributes) {
                 return null;
@@ -624,23 +678,25 @@
 
             return this._previousAttributes[attr];
         },
-        // 返回上一次的attribues
+        // 返回模型最近一次change事件之前的属性
         previousAttributes: function() {
             return _.clone(this._previousAttributes);
         },
         fetch: function(options) {
             options = _.extend({parse: true}, options);
             var model = this;
+            // 保存read事件成功之后 执行的回调函数
             var success = options.success;
 
-            // 这个回掉函数什么时候会执行
+            // 这个回调函数将在read事件成功之后执行
             options.success = function(resp) {
                 // model.parse(resp, options)直接返回resp
-                // 这个参数的意义在哪?
+                // 参数options的意义在哪?
+                // 服务器返回的模型数据
                 var serverAttrs = options.parse ? model.parse(resp, options) : resp;
 
                 // 如果数据校验不通过则返回false
-                // 否则更新内部属性this.attributes
+                // 否则更新模型与服务器模型保持一致
                 if (!model.set(serverAttrs, options)) {
                     return false;
                 }
@@ -651,10 +707,11 @@
                 }
 
                 // 触发sync事件
+                // 为什么要触发这个事件
                 model.trigger('sync', model, resp, options);
             };
 
-            // wrapError中的回调函数什么时候执行
+            // 设置read事件失败后执行的回调函数
             wrapError(this, options);
             return this.sync('read', options);
         },
@@ -669,12 +726,12 @@
             }
 
             options = _.extend({validate: true, parse: true}, options);
-            // wait决定是否更新模型内部状态
+            // wait决定是否更新模型
             var wait = options.wait;
 
             if (attrs && wait) {
                 // 数据校验不通过则返回false
-                // 否则更新内部属性
+                // 否则更新模型
                 if (!this.set(attrs, options)) {
                     return false;
                 }
@@ -690,14 +747,15 @@
                 // 既然上面已经将this覆给model 
                 // 这里为什么会把attribues覆给model.attribues
                 // model本身的attribues不就指向this.attribues吗?
+                // 这里将attribues覆给model.attribues是因为同步服务器模型时保存attribues也被同步更新
                 model.attributes = attributes;
                 var serverAttrs = options.parse ? model.parse(resp, options) : resp;
 
-                // 是否更新模型内部状态
                 if (wait) {
                     serverAttrs = _.extend({}, attrs, serverAttrs);
                 }
 
+                // 同步服务器模型
                 // 如果数据校验不通过 则返回false
                 if (serverAttrs && !model.set(serverAttrs, options)) {
                     return false;
@@ -712,34 +770,38 @@
 
             wrapError(this, options);
 
-            // 根据传入的参数更新模型内部状态
+            // 根据传入的参数更新模型
             if (attrs && wait) {
                 this.attributes = _.extend({}, attributes, attrs);
             }
 
+            // 将模型保存到服务器或者更新服务器模型
             var method = this.isNew() ? 'create' : (options.patch ? 'patch' : 'update');
 
+            // patch方法只将改变的属性发到服务器
             if (method === 'patch' && !options.attrs) {
                 options.attrs = attrs;
             }
 
             var xhr = this.sync(method, this, options);
             this.attributes = attributes;
-            return this;
+            return xhr;
         },
-        destory: function(options) {
+        destroy: function(options) {
             options = options ? _.clone(options) : {};
             var model = this;
             var success = options.success;
             // wait表示是否等待服务器返回结果再销毁模型
             var wait = options.wait;
-
-            // 销毁模型
+            
             var destory = function() {
+                // 停止监听其他对象
                 model.stopListening();
-                model.trigger('destory', model, model.collection, options);
+                // destroy事件会冒泡到所有包含该model的集合中
+                model.trigger('destroy', model, model.collection, options);
             };
 
+            // 销毁成功之后的执行的回调函数
             options.success = function(resp) {
                 if (wait) {
                     destory();
@@ -788,7 +850,7 @@
         parse: function(resp, options) {
             return resp;
         },
-        // 返回该模型具有相同属性的实例
+        // 使用模型的构造函数创建一个与该模型具有相同属性的模型
         clone: function() {
             return new this.constructor(this.attributes);
         },
@@ -806,6 +868,7 @@
                 return true;
             }
 
+            // this.validate这个方法是未定义的, 可以使用自定义验证逻辑覆盖它
             attrs = _.extend({}, this.attributes, attrs);
             var error = this.validationError = this.validate(attrs, options) || null;
 
@@ -813,6 +876,7 @@
                 return true;
             }
 
+            // 如果验证不通过将会触发一个invalid事件
             this.trigger('invalid', this, error, _.extend(options, {validationError: error}));
             return false;
         }
@@ -823,6 +887,7 @@
         options || (options = {});
         this.preinitialize.apply(this, arguments);
 
+        // 可以使用自定义的模型构造函数覆盖默认的
         if (options.model) {
             this.model = options.model;
         }
@@ -889,6 +954,7 @@
         add: function(models, options) {
             return this.set(models, _.extend({merge: false}, options, addOptions));
         },
+        //从集合中移除模型
         remove: function(models, options) {
             options = _.extend({}, options);
             var singular = !_.isArray(models);
@@ -904,9 +970,11 @@
                     merged: [],
                     removed: removed
                 };
+                // 从集合中移除模型会触发一个update事件
                 this.trigger('update', this, options);
             }
 
+            // 返回被移除的模型
             return singular ? removed[0] : removed;
         },
         set: function(models, options) {
@@ -956,10 +1024,11 @@
             for (i = 0; i < models.length; i++) {
                 model = models[i];
 
-                // 是否存在该模型
+                // 集合中是否存在该模型
                 var existing = this.get(model);
 
                 if (existing) {
+                    // 
                     if (merge && model !== existing) {
                         var attrs = this._isModel(model) ? model.attributes : model;
 
@@ -975,6 +1044,7 @@
                         }
                     }
 
+                    // modelMap是一个新模型的映射表
                     if (!modelMap(existing.cid)) {
                         modelMap[existing.cid] = true;
                         set.push(model);
@@ -995,11 +1065,11 @@
             } 
 
             if (remove) {
-                // 遍历集合查询不存在与列表中的模型
+                // 移除集合中没有在modelMap形成映射的模型
                 for (i = 0; i < this.length; i++) {
                     model = this.models[i];
 
-                    // 添加列表中不存在的模型
+                    // toRemove表示将要移除模型的集合
                     if (!modelMap[model.cid]) {
                         toRemove.push(model);
                     }
@@ -1016,6 +1086,8 @@
 
             if (set.length && replace) {
                 // 判断是否需要更新模型
+                // 如果集合的长度和新增的模型的数量不相等
+                // 或者集合中存在索引对应的值和set中不匹配
                 orderChanged = this.length !== set.length || _.some(this.models, function(m, index) {
                     return m !== set[index];
                 });
@@ -1026,7 +1098,7 @@
                 // 更新集合的长度
                 this.length = this.models.length;
             } else if (toAdd.length) {
-                // 添加toAdd中的模型到原先的集合中
+                // 添加toAdd中的模型到原先的集合中 并更新集合长度
                 if (sortable) {
                     sort = true;
                 }
@@ -1040,21 +1112,22 @@
             }
 
             if (!options.slient) {
+                // 遍历被添加的模型 触发add事件
                 for (i = 0; i < toAdd.length; i++) {
                     if (at != null) {
                         options.index = at + i;
                     }
 
                     model = toAdd[i];
-                    // 如果不是静默添加 触发add事件
                     model.trigger('add', model, this, options);
                 }
 
+                // 如果要求排序 则触发集合的sort事件
                 if (sort || orderChanged) {
                     this.trigger('sort', this, options);
                 }
 
-                // 如果集合中的模型发生改变 则触发update事件
+                // 如果集合发生了改变 则触发集合的update事件
                 if (toAdd.length || toRemove.length || toMerge.length) {
                     options.changes = {
                         added: toAdd,
@@ -1071,15 +1144,18 @@
         reset: function(models, options) {
             options = options ? _.clone(options) : {};
 
-            // 移除之前的关联
+            // 从映射表中移除集合中的模型
+            // 删除引用
             for (var i = 0; i < this.models.length; i++) {
                 this._removeReference(this.models[i], options);
             }
 
+            // 指向之前的集合
             options.previousModels = this.models;
             // 重置集合
             this._reset();
             // 添加models中的模型到集合中
+            // 重置集合中的模型
             models = this.add(models, _.extend({slient: true}, options));
 
             // 触发rest事件
@@ -1087,6 +1163,7 @@
                 this.trigger('reset', this, options);
             }
 
+            // 返回新添加的模型
             return models;
         },
         // 在集合尾部添加一个模型
@@ -1111,7 +1188,7 @@
         slice: function() {
             return slice.apply(this.models, arguments);
         },
-        // 根据id返回集合中的模型
+        // 根据obj返回集合中的模型
         get: function(obj) {
             if (obj == null) {
                 return void 0;
@@ -1125,7 +1202,7 @@
         has: function(obj) {
             return this.get(obj) != null;
         },
-        // 返回指定位置的集合
+        // 返回指定位置的模型
         at: function(index) {
             if (index < 0) {
                 index += this.length;
@@ -1138,9 +1215,9 @@
         where: function(attrs, first) {
             return this[first ? 'find' : 'filter'](attrs);
         },
-        // 返回所有满足条件的模型
+        // 返回第一个满足条件的模型
         findWhere: function(attrs) {
-            return this.find(attrs);
+            return this.where(attrs, true);
         },
         // 对集合从新排序
         sort: function(options) {
@@ -1155,7 +1232,7 @@
             var length = comparator.length;
 
             if (_.isFunction(comparator)) {
-                // 把this绑定到comparator
+                // 使comparator中的this指向this
                 comparator = _.bind(comparator, this);
             }
 
@@ -1165,13 +1242,14 @@
                 this.models.sort(comparator);
             }
 
+            // 触发sort事件
             if (!options.slient) {
                 this.trigger('sort', this, options);
             }
 
             return this;
         },
-        // 返回集合中模型的attr属性数组
+        // 返回集合中存在key为attr的模型的集合
         pluck: function(attr) {
             return this.map(attr + '');
         },
@@ -1180,14 +1258,17 @@
             var success = options.success;
             var collection = this;
 
+            // read请求成功时的回调函数
             options.success = function(resp) {
                 var method = options.reset ? 'reset' : 'set';
+                // 当请求成功时会合并获取到的模型
                 collection[method](resp, options);
 
                 if (success) {
                     success.call(options.context, collection, resp, options);
                 }
 
+                // 触发一个sync事件
                 collection.trigger('sync', collection, resp, options);
             };
 
@@ -1197,12 +1278,16 @@
         create: function(model, options) {
             options = options ? _.clone(options) : {};
             var wait = options.wait;
+            // 生成一个全新的模型
+            // _prepareModel如果参数校验不通过会返回一个false
             model = this._prepareModel(model, options);
 
             if (!model) {
                 return false;
             }
 
+            // 在wait为false的情况下
+            // 不等服务器返回结果就将模型添加到集合中
             if (!wait) {
                 this.add(model, options);
             }
@@ -1211,6 +1296,7 @@
             var success = options.success;
 
             options.success = function(m, resp, callbackOpts) {
+                // 将模型添加到集合中
                 if (wait) {
                     collection.add(m, callbackOpts);
                 }
@@ -1223,10 +1309,12 @@
             model.save(null, options);
             return model;
         },
+        // 默认返回服务器端返回的JSON对象
+        // 如果有需要 可以重新该函数
         parse: function(resp, options) {
             return resp;
         },
-        // 根据集合中的模型创建一个完全相同的集合
+        // 根据集合的构造函数和参数创建一个模型列表相同的集合
         clone: function() {
             return new this.constructor(this.models, {
                 model: this.model,
@@ -1254,8 +1342,7 @@
             this.models = [];
             this._byId = {};
         },
-        // 类似于构造函数?
-        // 如果校验通过返回一个集合
+        // 如果校验通过则返回一个模型 否则返回false
         _prepareModel: function(attrs, options) {
             if (this._isModel(attrs)) {
                 if (!attrs.collection) {
@@ -1267,6 +1354,7 @@
 
             options = options ? _.clone(options) : {};
             options.collection = this;
+            // 使用模型构造函数生成一个新的模型 
             var model = new this.model(attrs, options);
 
             if (!model.validationError) {
@@ -1276,21 +1364,25 @@
             this.trigger('invalid', this, model.validationError, options);
             return false;
         },
-        // 移除列表中的模型
+        // 从集合中移除模型
         _removeModels: function(models, options) {
             var removed = [];
 
             for (var i = 0; i < models.length; i++) {
                 var model = this.get(models[i]);
 
+                // 如果集合中不存在该模型则跳过
                 if (!model) {
                     continue;
                 }
 
                 var index = this.indexOf(model);
+                // 从移除集合中对应的模型 并更新集合长度
                 this.models.splice(index, 1);
                 this.length--;
 
+                // this._byId是一个模型的映射表
+                // 从映射表中删除对该模型的引用
                 delete this._byId[model.cid];
                 var id = this.modelId(model.attributes);
 
@@ -1298,22 +1390,25 @@
                     delete this._byId[id];
                 }
 
+                // 触发一个模型的remove事件
                 if (!options.slient) {
                     options.index = index;
                     model.trigger('remove', model, this, options);
                 }
 
+                // 将移除的模型添加到数组中
                 removed.push(model);
-                this._removeReference(mode, options);
+                this._removeReference(model, options);
             }
 
+            // 返回从集合中删除的模型
             return removed;
         },
-        // 判断是否是一个Model的实例
+        // 判断是否是一个模型
         _isModel: function(model) {
             return model instanceof Model;
         },
-        // 生成一个关于集合中关于模型的映射表
+        // 在映射表中添加对该模型的引用
         _addReference: function(model, options) {
             this._byId[model.cid] = model;
             var id = this.modelId(model.attributes);
@@ -1322,9 +1417,10 @@
                 this._byId[id] = model;
             }
 
+            // 订阅all事件
             model.on('all', this._onModelEvent, this);
         },
-        // 从映射表中删除模型
+        // 从映射表中删除对模型的引用
         _removeReference: function(model, options) {
             delete this._byId[model.cid];
             var id = this.modelId(model.attributes);
@@ -1337,6 +1433,7 @@
                 delete model.collection;
             }
 
+            // 移除模型所有的订阅或是监听对象
             model.off('all', this._onModelEvent, this);
         },
         // 如果是change事件则更新映射表
@@ -1805,6 +1902,7 @@
                 return;
             }
 
+            // 获取routes
             this.routes = _.result(this, 'routes');
             var route, routes = _.keys(this.routes);
 
